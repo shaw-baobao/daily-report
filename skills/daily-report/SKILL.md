@@ -20,13 +20,13 @@ metadata:
 
 1. 环境变量 `DAILY_REPORT_PACKAGE`（如已设置，直接用）
 2. SKILL 文件所在目录的父的父目录即包根（`<skill>/../../daily_report` 是否存在）
-3. 常见安装位置：`~/Documents/company/daily-report`、`~/daily-report`
+3. 常见安装位置：`~/daily-report`
 
 确认一个存在的根后，后续所有 `python3 -m daily_report.tools.*` 调用都要 `PYTHONPATH=<root>` 前缀。推荐开头做一次：
 
 ```bash
 # 自动定位包（失败则直接问用户）
-for cand in "$DAILY_REPORT_PACKAGE" "$HOME/Documents/company/daily-report" "$HOME/daily-report"; do
+for cand in "$DAILY_REPORT_PACKAGE" "$HOME/daily-report"; do
   [ -d "$cand/daily_report" ] && export DAILY_REPORT_PACKAGE="$cand" && break
 done
 echo "$DAILY_REPORT_PACKAGE"
