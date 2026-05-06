@@ -40,6 +40,19 @@ Skill 会：
 
 **未经确认永远不会发送**。
 
+### 多仓场景
+
+如果你在一个同时包含多个独立 git 仓库的工作目录下（例如 `~/Documents/company/` 下放了十几个项目，今天在其中几个里各有提交），直接说：
+
+> 帮我写今天所有仓库的日报
+
+Skill 会扫描一级子目录，只纳入今日有提交的仓库，归纳成一份综合日报：
+
+- 「今日工作」按仓库分三级标题
+- 「问题与风险」和「明日计划」跨仓合并，用 `[仓库名]` 前缀标注来源
+- 落盘到 `~/.dailyreport/reports/_workspace_<目录名>/YYYY-MM-DD.md`
+- 备注文件位置：`~/.dailyreport/notes/_workspace_<目录名>/YYYY-MM-DD.md`
+
 ## 备注格式（可选）
 
 提前在 `~/.dailyreport/notes/<repo>/YYYY-MM-DD.md` 写 commit 里看不到的信息（会议、口头讨论、风险判断），它们会覆盖/补充 Skill 从 commit 归纳的结果：

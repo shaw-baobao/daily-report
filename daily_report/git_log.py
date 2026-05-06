@@ -30,8 +30,13 @@ def read_today_commits(repo_path: str = ".") -> List[str]:
     except FileNotFoundError:
         raise RuntimeError("git is not installed or not on PATH")
     except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr or ""
+        # Empty repo (no commits yet) is not an error in this context —
+        # treat it the same as "no commits today".
+        if "does not have any commits yet" in stderr:
+            return []
         raise RuntimeError(
-            f"git log failed (exit {exc.returncode}): {exc.stderr.strip()}"
+            f"git log failed (exit {exc.returncode}): {stderr.strip()}"
         )
 
     lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]

@@ -34,16 +34,27 @@ echo "$DAILY_REPORT_PACKAGE"
 
 ## 标准工作流（严格按顺序）
 
+### 第 0 步：判定单仓 vs 多仓（Q3）
+
+- 如果用户的 cwd 在一个 git 工作树里 → **默认单仓**。
+- 如果用户的 cwd **不在** git 工作树里（例如 `~/Documents/company` 这种"工作区"根），**MUST 先问**用户：
+  > 当前目录 `<path>` 不是 git 仓库。你想：
+  > A. 扫描它下面的所有子仓库，汇总成一份多仓日报
+  > B. 告诉我具体想写哪个仓库的日报（请 `cd` 进去或告诉我路径）
+
+  **不要自作主张地扫描**；用户明确选 A 才走多仓流程。
+
+- 如果用户在对话中明说"扫一下 X 目录" / "多仓日报" / "把 company 下今天改过的都汇总" → 直接走多仓流程。
+
 ### 第 1 步：收集数据
 
-在**用户当前所在的 git 仓库**目录下运行：
+#### 单仓
 
 ```bash
-cd <user's repo>  # 如果用户没在仓库里，先问清楚
 PYTHONPATH="$DAILY_REPORT_PACKAGE" python3 -m daily_report.tools.collect --repo "$PWD"
 ```
 
-输出是单个 JSON，字段见下：
+输出 JSON 的顶层 `mode` 字段为 `"single"`，其它字段：
 
 | 字段 | 含义 |
 |------|------|
@@ -51,12 +62,37 @@ PYTHONPATH="$DAILY_REPORT_PACKAGE" python3 -m daily_report.tools.collect --repo 
 | `repo_name` | `git rev-parse --show-toplevel` 的 basename |
 | `commits` | 今日所有 commit（**包含 merge commit**），每条 `"<hash> <subject>"` |
 | `notes` | `~/.dailyreport/notes/<repo>/<date>.md` 的内容，没有则 `null` |
-| `notes_path` | 期望的备注路径（用于告诉用户下次可以在哪写备注） |
+| `notes_path` | 期望的备注路径 |
 | `out_path` | 日报最终应写入的绝对路径 |
+
+#### 多仓（workspace）
+
+```bash
+PYTHONPATH="$DAILY_REPORT_PACKAGE" python3 -m daily_report.tools.collect --scan "$PWD"
+```
+
+`--scan` 扫描一级子目录，**自动跳过**今日无提交的仓库。也可以手工指定：
+
+```bash
+python3 -m daily_report.tools.collect --repo path/A --repo path/B --repo path/C
+```
+
+输出 JSON 的 `mode == "workspace"`：
+
+| 字段 | 含义 |
+|------|------|
+| `date` | `YYYY-MM-DD` |
+| `workspace_name` | 工作区目录 basename（如 `company`） |
+| `repos` | 数组，每项 `{repo_name, repo_path, commits}`（**只含今日有提交的仓库**） |
+| `notes` | `~/.dailyreport/notes/_workspace_<workspace_name>/<date>.md` 的内容，没有则 `null` |
+| `notes_path` | 期望的 workspace 备注路径 |
+| `out_path` | 日报最终应写入的绝对路径（`~/.dailyreport/reports/_workspace_<name>/<date>.md`）|
+
+**如果 `repos` 为空**（扫到了子仓库但今日都无提交）→ 告诉用户"今天所有子仓库都无提交"，不要生成日报。
 
 ### 第 2 步：你（LLM）归纳为中文三段
 
-读取上一步的 `commits` 和 `notes`，用中文生成 markdown，严格按以下结构：
+#### 单仓结构
 
 ```markdown
 # 日报 <date>
@@ -73,16 +109,46 @@ PYTHONPATH="$DAILY_REPORT_PACKAGE" python3 -m daily_report.tools.collect --repo 
 - <要点 1 或 "待补充">
 ```
 
+#### 多仓结构
+
+`今日工作` 按仓库分**三级标题**；`问题与风险` 和 `明日计划` **不分仓库**，用 `[<repo_name>]` 前缀标注来源：
+
+```markdown
+# 日报 <date>
+
+## 今日工作
+
+### <repo_name_A>
+- <要点 1>
+- <要点 2>
+
+### <repo_name_B>
+- <要点 1>
+
+## 问题与风险
+- [<repo_name_A>] <要点> 或 "暂无"
+
+## 明日计划
+- [<repo_name_B>] <要点> 或 "待补充"
+```
+
+每个仓库内部仍然严格遵循下面的归纳规则。
+
 **归纳规则（MUST 遵守）**：
 
 1. **合并同 scope**：`git` commit 如果共享同一 scope（如 `docs(ble):`、`feat(ble):`、`fix(ble):` 三条 BLE 相关），要归纳成**一条**中文要点，突出产出价值；不要逐条罗列。
 2. **merge commit 要纳入**：`Merge pull request #N from ...` / `Merge branch ...` 这类 commit，要从 PR/分支名提炼出**功能主题**（例如 `Merge pull request #42 from feat/ble-daemon` → "完成 BLE 守护进程特性合入主干"）。不要出现 "Merge pull request #42" 这种原始字样。
 3. **去噪**：输出里**不要**出现 git hash、`type(scope):` 前缀、英文 commit 原文。技术专有名词（如 BLE、daemon、P0）可以保留。
 4. **视角换位**：从"提交动作"（add/record/update）改为"产出价值"（"实现了 / 修复了 / 梳理了"）。
-5. **风险提炼**：commit subject 含以下关键词之一的，MUST 提取到「问题与风险」段：`fix`、`bug`、`regression`、`revert`、`hack`、`workaround`、`P0`、`P1`、`crash`、`hotfix`、`rollback`。提炼时用中文说清楚"什么场景下有什么问题"，不要臆测。
+5. **风险提炼（读 commit body，不止 subject）**：commit subject 含 `fix`、`bug`、`regression`、`revert`、`hack`、`workaround`、`P0`、`P1`、`crash`、`hotfix`、`rollback` 之一**可能**是风险信号，但**必须**用 `git show --no-patch --format='%s%n%n%b' <hash>` 读 body 做二次判定：
+   - `body` 里出现 `design, not bug` / `by design` / `pass` / `accepted` / `as designed` → **不是**风险，是设计决策或测试结果
+   - `regression test` / `regression pass` / `regression suite` → 是**测试轮次**，不是"回归 bug"
+   - `body` 里才能看到具体是"修复了什么"/"什么情况下有什么限制"；只看 subject 非常容易误读
+   提炼时用中文说清楚"什么场景下有什么问题"，不要臆测。无法判定时宁可不提取。
 6. **计划推断**：commit subject 含 `WIP`、`draft`、`partial`、`TODO`、`wip` 之一，或 `feat` 类 commit 明显未完成（如文档说"第 1 步"），MUST 放入「明日计划」。无线索时写 "待补充" 而不是编造。
 7. **全中文**：除专有名词外，禁止英文短语。
 8. **用户备注优先**：`notes` 字段如果存在，其中的三段内容**覆盖**或**补充**你从 commit 归纳出来的结果；用户手写的永远更权威。
+9. **多仓 commit 分组**：workspace 模式下，`今日工作` 按仓库分子标题；但合并同 scope / merge commit 归纳 / 去噪等规则在**每个仓库内部**照样适用。问题与风险 / 明日计划里用 `[repo_name]` 前缀标注来源仓库。
 
 **示例（输入 → 输出）**：
 
