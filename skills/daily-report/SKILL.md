@@ -60,7 +60,8 @@ PYTHONPATH="$DAILY_REPORT_PACKAGE" python3 -m daily_report.tools.collect --repo 
 |------|------|
 | `date` | `YYYY-MM-DD` |
 | `repo_name` | `git rev-parse --show-toplevel` 的 basename |
-| `commits` | 今日所有 commit（**包含 merge commit**），每条 `"<hash> <subject>"` |
+| `branch` | 当前分支名（`git branch --show-current`），detached 时为 `HEAD` |
+| `commits` | 今日所有 commit（**包含 merge commit**），每条 `"<hash> <subject>"`；超过 50 条时末尾追加 `"... 还有 N 条提交（已省略）"` |
 | `notes` | `~/.dailyreport/notes/<repo>/<date>.md` 的内容，没有则 `null` |
 | `notes_path` | 期望的备注路径 |
 | `out_path` | 日报最终应写入的绝对路径 |
@@ -83,7 +84,7 @@ python3 -m daily_report.tools.collect --repo path/A --repo path/B --repo path/C
 |------|------|
 | `date` | `YYYY-MM-DD` |
 | `workspace_name` | 工作区目录 basename（如 `company`） |
-| `repos` | 数组，每项 `{repo_name, repo_path, commits}`（**只含今日有提交的仓库**） |
+| `repos` | 数组，每项 `{repo_name, repo_path, branch, commits}`（**只含今日有提交的仓库**） |
 | `notes` | `~/.dailyreport/notes/_workspace_<workspace_name>/<date>.md` 的内容，没有则 `null` |
 | `notes_path` | 期望的 workspace 备注路径 |
 | `out_path` | 日报最终应写入的绝对路径（`~/.dailyreport/reports/_workspace_<name>/<date>.md`）|
@@ -97,9 +98,14 @@ python3 -m daily_report.tools.collect --repo path/A --repo path/B --repo path/C
 ```markdown
 # 日报 <date>
 
+分支：`<branch>`
+
 ## 今日工作
 - <要点 1>
+  - `<hash>` <subject>
+  - `<hash>` <subject>
 - <要点 2>
+  - `<hash>` <subject>
 ...
 
 ## 问题与风险
@@ -118,12 +124,16 @@ python3 -m daily_report.tools.collect --repo path/A --repo path/B --repo path/C
 
 ## 今日工作
 
-### <repo_name_A>
+### <repo_name_A>（分支：`<branch>`）
 - <要点 1>
+  - `<hash>` <subject>
+  - `<hash>` <subject>
 - <要点 2>
+  - `<hash>` <subject>
 
-### <repo_name_B>
+### <repo_name_B>（分支：`<branch>`）
 - <要点 1>
+  - `<hash>` <subject>
 
 ## 问题与风险
 - [<repo_name_A>] <要点> 或 "暂无"
@@ -136,9 +146,11 @@ python3 -m daily_report.tools.collect --repo path/A --repo path/B --repo path/C
 
 **归纳规则（MUST 遵守）**：
 
-1. **合并同 scope**：`git` commit 如果共享同一 scope（如 `docs(ble):`、`feat(ble):`、`fix(ble):` 三条 BLE 相关），要归纳成**一条**中文要点，突出产出价值；不要逐条罗列。
-2. **merge commit 要纳入**：`Merge pull request #N from ...` / `Merge branch ...` 这类 commit，要从 PR/分支名提炼出**功能主题**（例如 `Merge pull request #42 from feat/ble-daemon` → "完成 BLE 守护进程特性合入主干"）。不要出现 "Merge pull request #42" 这种原始字样。
-3. **去噪**：输出里**不要**出现 git hash、`type(scope):` 前缀、英文 commit 原文。技术专有名词（如 BLE、daemon、P0）可以保留。
+0. **分支与 commit 直接展示**：在日报正文中直接显示分支名。每条「今日工作」要点下方用**缩进子列表**列出对应的 commit（短 hash + subject 原文）。一条要点归纳自多个 commit 时，逐条列在该要点下方；每条要点下 commit 超过 5 条时，相同 scope 的 commit 合并为一行并在括号内注明数量，如 `` `25ac13c` feat(ble): ... 等共 4 条 ``，保证每个要点下不超过 5 行。
+
+1. **合并同 scope（仅用于「今日工作」归纳段）**：`git` commit 如果共享同一 scope（如 `docs(ble):`、`feat(ble):`、`fix(ble):` 三条 BLE 相关），在工作要点中归纳成**一条**中文要点，突出产出价值；不要逐条罗列。提交记录区域仍然展示原始条目。
+2. **merge commit 要纳入**：`Merge pull request #N from ...` / `Merge branch ...` 这类 commit，要从 PR/分支名提炼出**功能主题**（例如 `Merge pull request #42 from feat/ble-daemon` → "完成 BLE 守护进程特性合入主干"）。不要在「今日工作」归纳段出现 "Merge pull request #42" 这种原始字样；提交记录区域保留原始 subject。
+3. **去噪（仅归纳段）**：「今日工作」归纳要点里**不要**出现 `type(scope):` 前缀、完整英文 commit 原文。技术专有名词（如 BLE、daemon、P0）可以保留。提交记录区域保留 hash + 原始 subject。
 4. **视角换位**：从"提交动作"（add/record/update）改为"产出价值"（"实现了 / 修复了 / 梳理了"）。
 5. **风险提炼（读 commit body，不止 subject）**：commit subject 含 `fix`、`bug`、`regression`、`revert`、`hack`、`workaround`、`P0`、`P1`、`crash`、`hotfix`、`rollback` 之一**可能**是风险信号，但**必须**用 `git show --no-patch --format='%s%n%n%b' <hash>` 读 body 做二次判定：
    - `body` 里出现 `design, not bug` / `by design` / `pass` / `accepted` / `as designed` → **不是**风险，是设计决策或测试结果
@@ -146,9 +158,10 @@ python3 -m daily_report.tools.collect --repo path/A --repo path/B --repo path/C
    - `body` 里才能看到具体是"修复了什么"/"什么情况下有什么限制"；只看 subject 非常容易误读
    提炼时用中文说清楚"什么场景下有什么问题"，不要臆测。无法判定时宁可不提取。
 6. **计划推断**：commit subject 含 `WIP`、`draft`、`partial`、`TODO`、`wip` 之一，或 `feat` 类 commit 明显未完成（如文档说"第 1 步"），MUST 放入「明日计划」。无线索时写 "待补充" 而不是编造。
-7. **全中文**：除专有名词外，禁止英文短语。
-8. **用户备注优先**：`notes` 字段如果存在，其中的三段内容**覆盖**或**补充**你从 commit 归纳出来的结果；用户手写的永远更权威。
-9. **多仓 commit 分组**：workspace 模式下，`今日工作` 按仓库分子标题；但合并同 scope / merge commit 归纳 / 去噪等规则在**每个仓库内部**照样适用。问题与风险 / 明日计划里用 `[repo_name]` 前缀标注来源仓库。
+7. **截断提示处理**：若 `commits` 末尾出现 `"... 还有 N 条提交（已省略）"`，说明今天提交量超过 50 条上限。在「今日工作」末尾追加一条说明："（今日共提交超过 50 条，以上为摘要）"，提示读者工作量可能比列出的更多。
+8. **全中文**：除专有名词外，禁止英文短语。
+9. **用户备注优先**：`notes` 字段如果存在，其中的三段内容**覆盖**或**补充**你从 commit 归纳出来的结果；用户手写的永远更权威。
+10. **多仓 commit 分组**：workspace 模式下，`今日工作` 按仓库分子标题；但合并同 scope / merge commit 归纳 / 去噪等规则在**每个仓库内部**照样适用。问题与风险 / 明日计划里用 `[repo_name]` 前缀标注来源仓库。
 
 **示例（输入 → 输出）**：
 
@@ -161,12 +174,19 @@ e6f115c docs(ble): record P0 regression findings (perf + design limits)
 a1b2c3d Merge pull request #77 from feat/ble-daemon-handshake
 ```
 
-输出：
+输出（假设分支为 `feat/ble-daemon`，共 5 条 commit）：
 ```markdown
+分支：`feat/ble-daemon`
+
 ## 今日工作
 - 实现 BLE 外设会话常驻守护进程模式，并把守护进程的握手流程合入主干（#77）
+  - `a1b2c3d` Merge pull request #77 from feat/ble-daemon-handshake
+  - `25ac13c` feat(ble): add persistent daemon mode for BLE peripheral sessions
 - 记录守护进程 P0 回归问题（性能与设计限制），同步到 skill / 测试报告 / 手册
+  - `9faae1b` docs(ble): propagate daemon P0 findings across skill / test report / manual
+  - `e6f115c` docs(ble): record P0 regression findings (perf + design limits)
 - 为测试框架补充 KBM 与 Xbox360 手动扫测脚本
+  - `94083a6` docs(harness): add manual KBM + xbox360 sweep scripts
 
 ## 问题与风险
 - BLE 守护进程存在 P0 回归：性能与设计层面均有限制，已在文档中记录，需跟进解决方案

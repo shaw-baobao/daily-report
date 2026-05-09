@@ -49,7 +49,7 @@ import sys
 from datetime import date
 from typing import Optional
 
-from ..git_log import read_today_commits
+from ..git_log import read_current_branch, read_today_commits
 from ..notes import read_today_notes
 
 
@@ -107,11 +107,13 @@ def _build_single(repo: str, root: str, today: str) -> dict:
     notes_path = os.path.join(notes_dir, f"{today}.md")
     out_path = os.path.join(root, "reports", repo_name, f"{today}.md")
     commits = read_today_commits(repo_path=repo)
+    branch = read_current_branch(repo_path=repo)
     notes = read_today_notes(notes_dir=notes_dir)
     return {
         "mode": "single",
         "date": today,
         "repo_name": repo_name,
+        "branch": branch,
         "commits": commits,
         "notes": notes,
         "notes_path": notes_path,
@@ -134,6 +136,7 @@ def _build_workspace(
             {
                 "repo_name": _resolve_repo_name(repo_path),
                 "repo_path": os.path.abspath(repo_path),
+                "branch": read_current_branch(repo_path=repo_path),
                 "commits": commits,
             }
         )
