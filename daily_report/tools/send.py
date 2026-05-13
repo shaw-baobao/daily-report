@@ -32,6 +32,13 @@ def main(argv: list | None = None) -> int:
         help="按纯文本发送；默认按 markdown 发送（lark-cli 会自动排版）",
     )
     parser.add_argument(
+        "--as",
+        dest="send_as",
+        choices=["bot", "user"],
+        default="bot",
+        help="发送身份：bot（默认）或 user",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="仅打印将要发送的目标和内容，不调用 lark-cli",
@@ -51,14 +58,14 @@ def main(argv: list | None = None) -> int:
     content_mode = "text" if args.text else "markdown"
 
     if args.dry_run:
-        print(f"[dry-run] 目标={kind}:{target} 模式={content_mode}")
+        print(f"[dry-run] 目标={kind}:{target} 模式={content_mode} 身份={args.send_as}")
         print("-" * 40)
         print(content)
         print("-" * 40)
         return 0
 
     sender: ReportSender = FeishuSender(
-        target_kind=kind, target_id=target, content_mode=content_mode
+        target_kind=kind, target_id=target, content_mode=content_mode, send_as=args.send_as
     )
     try:
         sender.send(content)

@@ -61,7 +61,7 @@ PYTHONPATH="$DAILY_REPORT_PACKAGE" python3 -m daily_report.tools.collect --repo 
 | `date` | `YYYY-MM-DD` |
 | `repo_name` | `git rev-parse --show-toplevel` 的 basename |
 | `branch` | 当前分支名（`git branch --show-current`），detached 时为 `HEAD` |
-| `commits` | 今日所有 commit（**包含 merge commit**），每条 `"<hash> <subject>"`；超过 50 条时末尾追加 `"... 还有 N 条提交（已省略）"` |
+| `commits` | 今日当前用户（`git config user.email`）在该分支的所有 commit（**包含 merge commit**），每条 `"<hash> <subject>"`；超过 50 条时末尾追加 `"... 还有 N 条提交（已省略）"` |
 | `notes` | `~/.dailyreport/notes/<repo>/<date>.md` 的内容，没有则 `null` |
 | `notes_path` | 期望的备注路径 |
 | `out_path` | 日报最终应写入的绝对路径 |
@@ -72,7 +72,7 @@ PYTHONPATH="$DAILY_REPORT_PACKAGE" python3 -m daily_report.tools.collect --repo 
 PYTHONPATH="$DAILY_REPORT_PACKAGE" python3 -m daily_report.tools.collect --scan "$PWD"
 ```
 
-`--scan` 扫描一级子目录，**自动跳过**今日无提交的仓库。也可以手工指定：
+`--scan` 扫描一级子目录的**所有本地分支**，按 `git config user.email` 过滤只保留当前用户的提交，**自动跳过**今日无提交的仓库。同一仓库如有多个分支有提交，会输出多条 repo 条目（同 `repo_name`，不同 `branch`）。也可以手工指定：
 
 ```bash
 python3 -m daily_report.tools.collect --repo path/A --repo path/B --repo path/C
@@ -232,16 +232,20 @@ printf '%s' "$RENDERED_MARKDOWN" | PYTHONPATH="$DAILY_REPORT_PACKAGE" \
 ### 第 6 步：发送（仅在用户明确确认后）
 
 ```bash
-# 发群
+# 发群（默认 bot 身份）
 cat "$OUT_PATH" | PYTHONPATH="$DAILY_REPORT_PACKAGE" \
   python3 -m daily_report.tools.send --chat-id "$CHAT_ID"
 
 # 或发个人
 cat "$OUT_PATH" | PYTHONPATH="$DAILY_REPORT_PACKAGE" \
   python3 -m daily_report.tools.send --user-id "$USER_ID"
+
+# 如需以用户身份发送，加 --as user
+cat "$OUT_PATH" | PYTHONPATH="$DAILY_REPORT_PACKAGE" \
+  python3 -m daily_report.tools.send --as user --chat-id "$CHAT_ID"
 ```
 
-默认按 markdown 模式发送（`lark-cli` 会自动排版）。如果用户要求纯文本，加 `--text`。
+默认以 **bot 身份**发送，按 markdown 模式（`lark-cli` 会自动排版）。如果用户要求纯文本，加 `--text`；如果用户要求以个人身份发送，加 `--as user`。
 
 测试时可先用 `--dry-run` 验证命令构造，再移除 `--dry-run` 正式发送。
 
@@ -259,4 +263,4 @@ cat "$OUT_PATH" | PYTHONPATH="$DAILY_REPORT_PACKAGE" \
 | `ModuleNotFoundError: daily_report` | `PYTHONPATH` 未设置；确认 `$DAILY_REPORT_PACKAGE` 指向包根 |
 | `collect` 报 `git log failed` | 当前目录不是 git 仓库或 git 未安装 |
 | `send` 报 `未找到 lark-cli` | 未安装 lark-cli 或未登录，参考 lark-shared skill |
-| `send` 报 `lark-cli 发送失败` | 多半是 chat-id / user-id 错了，或无权限，或需要切 `--as user`（本 skill 默认 bot 身份） |
+| `send` 报 `lark-cli 发送失败` | 多半是 chat-id / user-id 错了，或无权限；默认 bot 身份，如需个人身份加 `--as user` |

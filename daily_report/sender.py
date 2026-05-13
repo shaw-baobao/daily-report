@@ -42,6 +42,7 @@ class FeishuSender(ReportSender):
         target_id: str,
         lark_cli: Optional[str] = None,
         content_mode: Literal["markdown", "text"] = "markdown",
+        send_as: Literal["bot", "user"] = "bot",
     ) -> None:
         if target_kind not in ("chat", "user"):
             raise ValueError(f"target_kind must be 'chat' or 'user', got {target_kind!r}")
@@ -49,9 +50,12 @@ class FeishuSender(ReportSender):
             raise ValueError("target_id must be non-empty")
         if content_mode not in ("markdown", "text"):
             raise ValueError(f"content_mode must be 'markdown' or 'text', got {content_mode!r}")
+        if send_as not in ("bot", "user"):
+            raise ValueError(f"send_as must be 'bot' or 'user', got {send_as!r}")
         self.target_kind = target_kind
         self.target_id = target_id
         self.content_mode = content_mode
+        self.send_as = send_as
         self.lark_cli = lark_cli or shutil.which("lark-cli") or "lark-cli"
 
     def send(self, content: str) -> None:
@@ -66,6 +70,7 @@ class FeishuSender(ReportSender):
             self.lark_cli,
             "im",
             "+messages-send",
+            "--as", self.send_as,
             target_flag,
             self.target_id,
             content_flag,

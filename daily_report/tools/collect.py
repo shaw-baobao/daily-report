@@ -49,7 +49,7 @@ import sys
 from datetime import date
 from typing import Optional
 
-from ..git_log import read_current_branch, read_today_commits
+from ..git_log import read_current_branch, read_today_commits, read_today_commits_all_branches
 from ..notes import read_today_notes
 
 
@@ -106,15 +106,38 @@ def _build_single(repo: str, root: str, today: str) -> dict:
     notes_dir = os.path.join(root, "notes", repo_name)
     notes_path = os.path.join(notes_dir, f"{today}.md")
     out_path = os.path.join(root, "reports", repo_name, f"{today}.md")
-    commits = read_today_commits(repo_path=repo)
     branch = read_current_branch(repo_path=repo)
+
+    branches_commits = read_today_commits_all_branches(repo_path=repo)
     notes = read_today_notes(notes_dir=notes_dir)
+
+    if len(branches_commits) <= 1:
+        commits = branches_commits.get(branch, []) or read_today_commits(repo_path=repo)
+        return {
+            "mode": "single",
+            "date": today,
+            "repo_name": repo_name,
+            "branch": branch,
+            "commits": commits,
+            "notes": notes,
+            "notes_path": notes_path,
+            "out_path": out_path,
+        }
+
+    branches_payload = []
+    for br, commits in branches_commits.items():
+        branches_payload.append({
+            "branch": br,
+            "commits": commits,
+        })
+
     return {
         "mode": "single",
         "date": today,
         "repo_name": repo_name,
         "branch": branch,
-        "commits": commits,
+        "branches": branches_payload,
+        "commits": [],
         "notes": notes,
         "notes_path": notes_path,
         "out_path": out_path,
@@ -129,17 +152,33 @@ def _build_workspace(
 ) -> dict:
     repos_payload: list[dict] = []
     for repo_path in repo_paths:
-        commits = read_today_commits(repo_path=repo_path)
-        if not commits:
-            continue  # Q2:B — skip repos with no commits today
-        repos_payload.append(
-            {
-                "repo_name": _resolve_repo_name(repo_path),
-                "repo_path": os.path.abspath(repo_path),
-                "branch": read_current_branch(repo_path=repo_path),
-                "commits": commits,
-            }
-        )
+        branches_commits = read_today_commits_all_branches(repo_path=repo_path)
+        if not branches_commits:
+            continue  # skip repos with no commits today from this user
+
+        repo_name = _resolve_repo_name(repo_path)
+        current_branch = read_current_branch(repo_path=repo_path)
+
+        if len(branches_commits) == 1:
+            branch_name = next(iter(branches_commits))
+            repos_payload.append(
+                {
+                    "repo_name": repo_name,
+                    "repo_path": os.path.abspath(repo_path),
+                    "branch": branch_name,
+                    "commits": branches_commits[branch_name],
+                }
+            )
+        else:
+            for branch_name, commits in branches_commits.items():
+                repos_payload.append(
+                    {
+                        "repo_name": repo_name,
+                        "repo_path": os.path.abspath(repo_path),
+                        "branch": branch_name,
+                        "commits": commits,
+                    }
+                )
 
     archive_key = WORKSPACE_PREFIX + workspace_name
     notes_dir = os.path.join(root, "notes", archive_key)
